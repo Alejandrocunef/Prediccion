@@ -1,0 +1,215 @@
+---
+title: "Practica 3"
+author: "Garcia Giron A"
+date: "7/11/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Instalamos librerias
+```{r}
+library(corrplot)
+library(tidyverse)
+library(caret) 
+library(magrittr) 
+library(knitr) 
+library(rsample)
+library(PerformanceAnalytics) 
+library(leaps) 
+library(skimr) 
+library(bestglm) 
+library(gam)
+library(glmnet)  
+library(ggcorrplot) 
+library(ISLR)
+library(readr)
+library(janitor)
+library(imputeTS)
+```
+#variables clave
+#Overall Science Score (average score for 15 year olds)
+#Interest in science
+#Support for scientific inquiry
+#Income Index
+#Health Index
+#Education Index
+#Human Development Index (composed of the Income index, Health Index, and #    Education Index)
+#Leemos los datos
+
+Cargamos y limpiamos la Data
+
+```{r}
+data_pisa <- read_csv("../data/pisasci2006.csv")
+#limpiamos de posibles simbolos adversos 
+data_pisa %<>% clean_names()   
+colnames(data_pisa)
+data_pisa <- na_mean(data_pisa)
+
+```
+
+Summarize de los datos, un Skim es completo.
+
+```{r}
+skim(data_pisa)
+```
+
+
+Graficamos las Correlaciones 
+
+```{r}
+
+eliminamos_factor <- c("country")
+# Correlaciones
+
+corrplot(cor(data_pisa%>% 
+               select_at(vars(-eliminamos_factor)), 
+             use = "complete.obs"), 
+         method = "square",type = "upper")
+
+# Other Correlations
+ggcorrplot(cor(data_pisa %>% 
+               select_at(vars(-eliminamos_factor)), 
+            use = "complete.obs"),
+            hc.order = TRUE,
+            type = "upper",  lab = TRUE)
+ 
+chart.Correlation(data_pisa%>%
+                  select_at(vars(-eliminamos_factor)),
+               histogram=TRUE, pch=19)
+```
+
+Grados de libertad , esta formula adecua de manera automatica la curva a los datos
+
+```{r}
+
+
+sp_interest <- smooth.spline(data_pisa$interest, data_pisa$overall, cv=TRUE)
+sp_interest
+
+sp_support <- smooth.spline(data_pisa$support, data_pisa$overall, cv=TRUE)
+sp_support
+
+sp_income <- smooth.spline(data_pisa$income, data_pisa$overall, cv=TRUE)
+sp_income
+
+sp_Health<- smooth.spline(data_pisa$health, data_pisa$overall ,cv=TRUE)
+sp_Health
+
+sp_edu <- smooth.spline(data_pisa$edu, data_pisa$overall ,cv=TRUE)
+sp_edu
+
+sp_hdi <- smooth.spline(data_pisa$hdi, data_pisa$overall ,cv=TRUE)
+sp_hdi
+
+```
+Un ploteo a modo de comparacion
+
+
+El grafo amarillo indica una modelacion con un criterio mio insertando un numero random, el azul, sin embargo, nos ajusta automaticamente el modelo suavizado a un optimo que regulariza el modelo, no ajusta de manera tan precisa pero cubre posibles predicciones futuras sin ajustarse tanto al dato. no buscamos un criterio de explicativo optimo, buscamos un criterio predictivo optimo.
+
+
+```{r}
+plot(data_pisa$interest, data_pisa$overall, col='red')
+criterio_aleat <- smooth.spline(data_pisa$interest, data_pisa$overall, df=19)
+criterio_smooth <- smooth.spline(data_pisa$interest, data_pisa$overall, cv=TRUE)
+lines(criterio_aleat, col='yellow', lwd=2)
+lines(criterio_smooth, col='blue', lwd=1)
+ 
+```
+
+# MODELOS GAM
+
+Modelo  GAM 
+Meto todas las variables que hay en el modelo excepto explain y evidence ya que con ellas existe una explicacion perfecta. Se aplican las que hemos considerado a priori importantes con sus correspondientes grados de libertad y a mayores la variable  issue.
+
+GAM1
+```{r}
+
+gam1 <- gam(overall ~ s(interest, df=4.750171) + s(support, df=2.001243) + s(income, df=4.244952)+ s(health, df=2.002844)+ s(edu, df=2.002385)+ s(hdi, df=8.603228),
+            data = data_pisa )
+plot(gam1, se=TRUE, col='blue')
+
+```
+
+
+```{r}
+summary(gam1)
+```
+
+Realizare un modelo Gam2  eliminando el spline a las variables suport, health y edu que parece que se aproximan mas a un aspecto lineal, veremos que conclusiones derivamos.
+
+
+```{r}
+
+gam2 <- gam(overall ~ s(interest, df=4.750171) + support + s(income, df=4.244952)+ health + edu + s(hdi, df=8.603228),
+            data = data_pisa )
+plot(gam2, se=TRUE, col='blue')
+```
+
+
+```{r}
+summary(gam2)
+```
+No sacamos como significativas las variables health y edu pero conseguimos mejorar el AIC en un punto.
+
+
+No creo que esta medida sea determinante porque ha mejorado minimamente.
+
+
+vamos a analizar la varianza para determinar con cual de ambos nos quedamos
+
+
+#Analisis de varianza (ANOVA)
+
+
+```{r}
+anova(gam1, gam2)
+```
+Nos quedamos con el modelo gam1 ya que es el que menor numero de residuos tiene
+
+
+No realizo division de muestras para entrenamiento ni testeo ya que considero que es un espacio muy pequeño
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
