@@ -1,0 +1,162 @@
+---
+title: "nba"
+author: "Garcia Giron"
+date: "28/10/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```  
+#### Cargamos las librerias
+
+```{r}
+ library(tidyverse)
+  library(readr)
+  library(dplyr)
+  library(TeachingDemos)
+  library(nortest)
+  library(car)
+  library(MASS)
+  library(leaps)
+  library(gvlma)
+  library(ISLR)
+  library(tinytex)
+``` 
+### Cargamos el dataset nba
+```{r}
+nba <- read.csv("nba.csv")
+head(nba)
+
+
+```
+###El siguiente paso es suprimir los pertenecientes al objeto nba.
+```{r}
+
+
+nba <- unique(nba)
+nba <- na.omit(nba)
+
+```
+###Cambiamos el nombre de las variables
+ ```{r}
+
+names(nba)[3] = "pais"
+names(nba)[4] = "ranking"
+names(nba)[5]= "edad"
+names(nba)[6] = "equipo"
+names(nba)[7] = "partidos"
+names(nba)[8] = "minutos"
+names(nba)[9] = "eficiencia"
+names(nba)[10] = "acierto"
+names(nba)[11] = "intentodeTriple"
+names(nba)[12] = "intentodetLibre"
+names(nba)[13] = "reboteenAtaque"
+names(nba)[14] = "reboteenDefensa"
+names(nba)[15] = "rebotesenTotal"
+names(nba)[16] = "asistencias"
+names(nba)[17] = "robo"
+names(nba)[18] = "tapon"
+names(nba)[19] = "perdidaDeBalon"
+names(nba)[20] = "compañerismo"
+names(nba)[21] = "buenAtaque"
+names(nba)[22] = "buenaDefensa"
+names(nba)[23] = "buenoTotal"
+names(nba)[24] = "contribucion"
+```
+#vamos a hacer una primera regresion para ver la situacion de las variables y proceder a hacer dicha eliminacion
+# conocida coo ingenieria de variables, en primer lugar voy a omitir aquellas que representen parte de un conjunto
+#o al menos den a enter eso, ademas de las de caracter cualitativo
+
+#dejo fuera: buena defensa bueno total buena ataque buenaDefensa
+
+
+```{r}
+modelo1<-lm(Salary ~ ranking + edad + partidos + minutos+ eficiencia + acierto
+             + intentodeTriple + intentodetLibre + reboteenAtaque +  reboteenDefensa + rebotesenTotal + asistencias + robo + tapon
+             + perdidaDeBalon + compañerismo + buenAtaque +
+               buenoTotal + contribucion, data=nba)
+summary(modelo1)
+```
+#este metodo genera un experiento que arroja varios modelos, nos quedamos con el que tenga un valor AIC menor
+#la filosofia de este modelo es ir eliminando las variables menos utiles
+```{r}
+stepAIC(modelo1, direction="backward")
+
+
+Modelo2 <- lm(Salary ~ ranking + edad + partidos + minutos + reboteenAtaque + rebotesenTotal + compañerismo + buenoTotal, data=nba)
+summary(Modelo2)
+```
+## vamos a ver si existe multicolinealidad en el modelo
+
+```{r}
+
+
+vif(Modelo2)
+sqrt(vif(Modelo2)) > 2 
+
+
+```
+# vemos que hay un valor que tiende a generar multicolinealidad. vamos a eliminarlo, minutos out
+
+```{r}
+
+Modelo3 <- lm(Salary ~ ranking + edad + partidos  + reboteenAtaque + rebotesenTotal + compañerismo + buenoTotal, data=nba)
+summary(Modelo3)
+```
+# comprobamos el factor de inflacion que no haya valores superiores a dos, por ende, podemos decir 
+#que hemos eliminado la multicolinealidad del modelo
+
+```{r}
+
+vif(Modelo3)
+sqrt(vif(Modelo3)) > 2 
+
+BIC(modelo1,Modelo3)
+
+```
+# en este caso comparamos ambos modelos y elegimos el de menor BIC 
+
+#testeamos la hipotesis de normalidad 
+
+```{r}
+
+qqPlot(Modelo3, labels=row.names(nba), id.method = "identify",
+       simulate=TRUE, main = "Normalidad")
+
+```
+#testglobal
+```{r}
+Modelo3validacion_global <- gvlma(Modelo3)
+summary(Modelo3validacion_global)
+gvlma(x = Modelo3)
+
+```
+#prediccion`
+
+```{r}
+library(ISLR)
+set.seed(1234)
+n = 5
+muestraPred <- sample(1:nrow(nba), size = n, replace = FALSE)
+nba_aleat <- nba[muestraPred, ]
+nba_aleat
+
+
+
+nba_pred <- predict(Modelo3, newdata = nba_aleat)
+nba_pred
+
+
+```
+
+
+#no percibo mucha certeza a la hora de predecir, quizas he aplicado mal el descarte de los regresores iniciales
+
+```{r}
+```
+
+
+
+
+
