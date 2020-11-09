@@ -1,0 +1,269 @@
+---
+title: "Practica_CP02"
+author: "Garcia Giron A"
+date: "6/11/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+#Cargamos librerias
+
+
+```{r}
+library(readr)
+library(here) # Comentarios [//]:
+library(tidyverse)
+library(janitor) # Limpieza de nombres
+library(skimr) # Summary pro
+library(magrittr) # Pipe operators %<>%
+library(corrplot) # Gráfico de correlaciones
+library(ggcorrplot)  # Correlaciones con ggplot
+library(PerformanceAnalytics) # Otra correlación
+library(rsample)  # data splitting 
+library(glmnet)# implementing reg
+```
+
+```{r}
+nba_data <- read_csv("../data/nba.csv")
+
+nba_data %<>% clean_names()
+colnames(nba_data)
+```
+
+Limpieza de datos y skim
+
+```{r}
+
+#Limpiamos los datos y sacamos un skim, que es un summarize mas completo
+nba_data %<>% distinct(player,.keep_all= TRUE)
+nba_data %<>% drop_na()
+skim(nba_data)
+
+```
+
+
+
+
+
+Por estas  representaciones graficas determinamos visualmente el cambio de escala a logaritmica
+```{r}
+#Representaciones graficas
+
+nba_data %>% 
+  select_at(vars(-c("player","nba_country","tm"))) %>% 
+  tidyr::gather("id", "value", 22:25) %>%    
+  ggplot(., aes(y=salary, x=value))+
+  geom_point()+
+  geom_smooth(method = "lm", se=FALSE, color="green")+
+  facet_wrap(~id,ncol= 3 ,scales="free_x")
+
+
+#Aqui vamos a poner el logaritmico que nos vendra mejor
+
+nba_data %>% 
+  select_at(vars(-c("player","nba_country","tm"))) %>% 
+  tidyr::gather("id", "value", 22:25) %>% 
+  ggplot(., aes(y=log(salary), x=value))+
+  geom_point()+
+  geom_smooth(method = "lm", se=FALSE, color="blue")+
+  facet_wrap(~id,ncol=3 ,scales="free_x")
+
+```
+
+Apreciamos que en el salario se ven mejor las variables por lo que cambiaremos a log y trabajaremos con ello
+
+```{r}
+
+log_data_nba <- nba_data %>% mutate(salary = log(salary))
+```
+
+#seleccionamos las variables que queremos omitir
+```{r}
+no_vars <- c("player", "nba_country", "tm")
+```
+
+#un grafico de correlaciones nos ayuda a tener una vision mas detallada de lo que vamos a generar
+#y comparamos las distintas variables de una manera grafica
+
+```{r}
+
+corrplot(cor(log_data_nba%>% 
+              select_at(vars(-no_vars)),  
+            use = "complete.obs"), 
+         method = "square", type = "upper")
+
+```
+
+#mapa de calor, siempre muy intuitivo.
+
+```{r}
+ggcorrplot(cor(log_data_nba %>%
+                   select_at(vars(-no_vars)),
+                  use = "complete.obs"),
+           hc.order = TRUE, 
+                type = "lower",
+                outline.color = "white",
+                ggtheme = ggplot2::theme_gray,
+               colors = c("red", "white", "orange"))
+           
+```
+
+ Elastic Net Method
+
+Generamos un espacio aleatorio para nuestro modelo
+
+
+
+
+
+
+
+```{r}
+log_data_nba <- log_data_nba %>% 
+  select_at(vars(-no_vars))
+```
+
+
+
+
+
+
+```{r}
+set.seed(1984) #la actualidad me recuerda a esa novela
+
+nba_split <- initial_split(log_data_nba, prop = 0.7, strata = "salary")
+
+```
+
+Seleccionamos la parte de testeo y de training
+
+```{r}
+nba_training <- training(nba_split) #entrenamiento, siempre mas grande que muestra
+nba_testing  <- testing(nba_split) #testeo 
+
+```
+
+No intercepto, lo vamos a eliminar, discriminamos el intercepto
+
+
+```{r}
+nba_training_x <- model.matrix(salary ~ ., data = nba_training)[, -1]
+nba_training_y <- nba_training$salary
+
+nba_testing_x <- model.matrix(salary ~ ., data = nba_testing)[, -1]
+nba_testing_y <- nba_testing$salary
+
+dim(nba_training) #nos cercioramos de que el numero de filas es el 70 por cien del total
+```
+
+## Aplicacion del metodo Elastic Net
+
+ Definimos los tres modelos, el elastic es un intermedio entre el cresta y el lasso
+```{r}
+lasso_1   <- glmnet(nba_training_x, nba_training_y, alpha = 1.0)
+elastic_1 <- glmnet(nba_training_x, nba_training_y, alpha = 0.5)
+ridge_1    <- glmnet(nba_training_x, nba_training_y, alpha = 0.0)
+```
+
+
+#los ploteamos para la intepretacion visual
+
+```{r}
+par(mfrow = c(3, 1), mar = c(1, 3, 1, 3) + 0.1)
+
+plot(elastic_1, xvar = "lambda", main = "Elastic Net (Alpha = 0.5)")
+plot(ridge_1, xvar = "lambda", main = "Ridge (Alpha = 0)")
+plot(lasso_1, xvar = "lambda", main = "Lasso (Alpha = 1)")
+
+```
+
+Para saber con que modelo nos quedamos tenemos que experimentar con la variacion de los parametros alfa y lambda 
+
+```{r}
+fold_id <- sample(1:10, size = length(nba_training_y), replace = TRUE)
+
+```
+
+Vamos a crear una tibble que contenga los alphas desde 0 hasta 1, de 0.01 en 0.01, de manera que podemos escoger los dos mejores parámetros (aplha y lambda)
+
+```{r}
+tuning_grid <- tibble::tibble(
+  alpha      = seq(0, 1, by = .1),
+  mse_min    = NA,
+  mse_1se    = NA,
+  lambda_min = NA,
+  lambda_1se = NA
+)
+tuning_grid
+```
+
+loopeamos para completar la tabla que nos arroja anteriormente
+
+```{r}
+for(i in seq_along(tuning_grid$alpha)) {
+  
+  fit <- cv.glmnet(nba_training_x, nba_training_y, alpha = tuning_grid$alpha[i], foldid = fold_id)
+  
+# valores de alfa y lambda
+  
+  tuning_grid$mse_min[i]    <- fit$cvm[fit$lambda == fit$lambda.min]
+  tuning_grid$mse_1se[i]    <- fit$cvm[fit$lambda == fit$lambda.1se]
+  tuning_grid$lambda_min[i] <- fit$lambda.min
+  tuning_grid$lambda_1se[i] <- fit$lambda.1se
+}
+
+tuning_grid
+```
+Vemos en la parte superior lo datos cargados en la tabla
+ 
+Vemos que el alfa es el optimo, veremos como predice el modelo
+
+Pasamos a plotearlos
+
+```{r}
+tuning_grid %>%
+  mutate(se = mse_1se - mse_min) %>%
+  ggplot(aes(alpha, mse_min)) +
+  geom_line(size = 1) +
+  geom_ribbon(aes(ymax = mse_min + se, ymin = mse_min - se), alpha = .5) +
+  ggtitle("Error cuadratico medio  ± one standard error")
+```
+
+La grafica muestra nuestra linea dentro de las barras laterales por ende asumimos validez
+
+## prediccion
+
+Vamos a usar el modelo lasso para predecir
+
+```{r}
+# Calculamos el mínimo MSE para Lasso
+crossva_Lasso   <- cv.glmnet(nba_training_x, nba_training_y, alpha = 1.0)
+min(crossva_Lasso$cvm)
+
+
+```
+
+```{r}
+# Realizamos el cálculo con el dataset de training
+
+prediccion <- predict(crossva_Lasso, s=crossva_Lasso$lambda.min, nba_testing_x)
+mean((nba_testing_y - prediccion)^2)
+
+```
+De media del testeo menos la prediccion al cuadrado nos da 1.53, ya partimos de la base de que el laso era el mejor modelo. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
