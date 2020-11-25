@@ -1,0 +1,406 @@
+---
+title: "Practica 5"
+author: "Garcia Giron A"
+date: "22/11/2020"
+output:
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Índice de contenidos
+
+#### Enunciado
+#### Aplicación empirica
+##### Prediccion
+#### Conclusiones
+
+#### Enunciado
+El objetivo es predecir las 16 semanas del año 1963, para las dos cuotas de mercado, por lo que se dejará fuera de la muestra este periodo muestral.
+
+El análisis debe incluir para las dos series la estimación de un modelo ARIMA, la detección de atípicos/outlier y un modelo de interveción. Por último se debe realizar un modelo de función de tranferencia entre las dos cuotas.
+
+
+```{r}
+library(readr)
+library(TSA)
+library(ggplot2)
+library(forecast)
+library(zoo)
+library(xts)
+library(ggfortify)
+library(tseries)
+library(tsoutliers)
+library(openxlsx)
+```
+
+```{r}
+data <- read.xlsx('../data/data.xlsx')
+data
+#visualizamos los datos
+```
+
+```{r}
+#añadimos una nueva columna con la fecha.
+data$Date <- as.Date(paste(data$Year, data$Week, 1, sep = "-"), "%Y-%U-%u")
+data
+# paste une las dos cadenas week y year y nos la devuelve en el formato que le damos
+
+```
+
+
+```{r}
+# dividimos la serie en 2 para ver la evolucion de ambas organizaciones:
+# 52 porque 4 x 12 semanas de 1 año + las sueltas
+xcolgate <- ts(data$Colgate, start = 1958, frequency = 52)
+xcrest <- ts(data$Crest, start = 1958, frequency = 52)
+xcolgate
+xcrest
+```
+
+
+
+
+```{r, include=FALSE}
+# transformamos a objeto
+zcolgate <- as.zoo(xcolgate) #con esta funcion lo transformamos a objeto.
+zcrest <- as.zoo(xcrest)     
+
+# generamos un nombre para cada serie
+names(zcolgate) <- "Colgate"
+names(zcrest) <- "Crest"
+```
+
+
+```{r}
+# Graficamos ambas series y los plots que hacen la descomposicion de la misma.
+union <- cbind(zcolgate, zcrest)
+names(union) <- c("Colgate", "Crest") 
+autoplot(union) + ggtitle("Cuota de mercado") + xlab("Año") 
+plot(stl(zcolgate[, 1], s.window = "periodic")) #puedo meter estos graficos aquí ?
+plot(stl(zcrest[, 1], s.window = "periodic")) 
+```
+
+Consideraciones a priori.
+
+Sobre Colgate vemos que la tendencia de la serie es decreciente,no podemos decir lo mismo sobre Crest que, en cambio es creciente.
+En cuanto a colgate a finales del año 1959 vemos que hay un efecto en concreto que no se vuelve a repetir en la serie y a mediados de 1960 se produce el efecto caída como consecuencia del anuncio de ADA. Por la parte que corresponde a Crest el efecto en esa fecha es el contrario ya que la noticia le afecto de manera positiva al recibir esta el apoyo de la institución.
+
+
+```{r}
+# omitimos las semanas que vamos predecir
+
+omitimos = 16
+
+# tamaño de cada serie 
+obs_colgate = length(zcolgate)
+obs_crest = length(zcrest)
+
+# Submuestra: la dividimos para hacer la prediccion
+# usamos winow para sacar las 16 semanas 
+
+oColgate <- window(zcolgate, start = index(zcolgate[1]), end=index(zcolgate[obs_colgate - omitimos]))      
+
+oCrest <- window(zcrest,start=index(zcrest[1]), 
+                 end=index(zcrest[obs_crest- omitimos])) 
+
+```
+
+Realizamos el modelo ARIMA para cada serie, y podemos comprobar como tenemos valores atípicos, por lo que hay información que desajusta el modelo en ambos casos (evalores que sobresale de las bandas azules). Podemos afirmar que estos datos atípicos provienen de la intervención producida en 1961.
+
+
+[//]: como las dos sereis temporales no son estacionaria (no es constante ni en media ni en varianza) aplico logaritmos para convertirla en estacionaria en varianza. Para convertirlo en estacionario en media utilizaremos las diferencias.
+
+```{r}
+# Lo hacemos estacionario en varianza
+zcolgate_log <- log(zcolgate)
+zcrest_log <- log(zcrest)
+
+# graficamos 
+plot(log(zcolgate), ylab = "Log(zcolgate)", xlab = "Year")
+plot(log(zcrest), ylab = "Log(zcrest", xlab = "Year")
+```
+
+
+```{r}
+#  transformamos a estacionario en media:
+
+ggtsdisplay(diff(zcolgate))
+ggtsdisplay(diff(zcrest))
+
+```
+vamos a ver que modelo nos conviene mas para predecir.
+
+usamos Autoarima
+
+
+ MODELO ARIMA:
+```{r}
+
+# ajutes modelo arima (autoarima)
+autoar_colgate <- auto.arima(oColgate, lambda = 0)#lambda 0 es como usar logaritmos # selecciona mi modelo automaticamente, da igual ponerlo que no si antes ponemos log
+summary(autoar_colgate)
+autoar_crest <- auto.arima(oCrest, lambda = 0) 
+summary(autoar_crest)
+
+```
+
+
+```{r, include=FALSE}
+
+# análisis de los residuos 
+
+ggtsdisplay(autoar_colgate$residuals,
+            main = "Residuos ARIMA (0,1,1)") # modelo COLGATE 
+
+ggtsdisplay(autoar_crest$residuals,
+            main = "Residuos ARIMA (3,1,0)(1,0,0)") #modelo CREST
+
+
+```
+
+
+##### Predicción de las series
+
+```{r}
+
+fColgate.arima <- forecast(autoar_colgate)
+fColgate.arima
+
+```
+
+```{r}
+fCrest.arima <- forecast(autoar_crest)
+fCrest.arima
+
+```
+
+### OUTLIERS 
+Hay que tener cierto hincapié en revisar estos valores ya que si los descuidamos es posible que la serie tienda a desviarse.
+
+
+```{r}
+# outliers colgate 
+colgate_outliers <- tso(xcolgate, types = c("TC", "AO", "LS", "IO", "SLS"))
+colgate_outliers
+
+```
+
+
+```{r}
+plot(colgate_outliers) #revisar el ultimo que no me quedo muy claro
+```
+Resaltamos el outlier referente a 1960 ya que contamos con información acerca de su causa y la consecuncia es la continuación de la serie por debajo de la prevista si no hubiera ocurrido tal suceso.
+En el grafo anterior podemos ver como hubiera sido la serie de no haber caido en tal desgracia.
+
+```{r}
+# outliers colgate
+crest_outlier <- tso(xcrest, types = c("TC", "AO", "LS", "IO", "SLS"))
+crest_outlier
+```
+
+```{r}
+plot(crest_outlier)
+```
+En este caso de Crest vemos el efecto cntrario en el mismom periodo de tiempo, hay dos mas cuyo origen no comprendo pero el salto de cuota de mercado se debe al mismo anuncio que penalizo la cuota de mercadode colgate.
+
+
+Modelo de intervención
+
+```{r, include=FALSE}
+
+# colgate
+
+air.m1.colgate = arimax(log(oColgate),order = c(0,1,1),
+                seasonal = list(order = c(0,1,1),period = 52),
+                xtransf = data.frame(ADA = 1*(seq(oColgate) == 135),
+                    ADA = 1*(seq(oColgate) == 135)),
+                transfer = list(c(0,0),c(1,0)),
+                xreg = data.frame(Oct58 = 1*(seq(oColgate) == 43),
+                  Dic58 = 1*(seq(oColgate) == 102),Ago60 = 1*(seq(oColgate) == 136),Oct61 = 1*(seq(oColgate) == 196)),
+                method = 'ML') 
+air.m1.colgate
+```
+
+```{r, include=FALSE}
+# crest
+
+air.m1.crest = arimax(log(oCrest),order = c(3,1,0),
+              seasonal = list(order = c(1,0,0),period = 52),
+              xtransf = data.frame(IO108 = 1*(seq(oCrest) == 135),
+                       IO108 = 1*(seq(oCrest) == 135)),
+              transfer = list(c(0,0),c(1,0)),
+              xreg = data.frame(Mar61 = 1*(seq(oCrest) == 167),
+                    Oct61 = 1*(seq(oCrest) == 196),Ago60 = 1*(seq(oCrest) == 136)),
+              method = 'ML')
+air.m1.crest
+```
+
+```{r}
+# estos son los olyr que distorsionan la serie
+detectAO(air.m1.colgate) 
+detectAO(air.m1.crest) 
+```
+
+
+```{r}
+# estos nos distorsionan el el errror
+detectIO(air.m1.colgate) 
+detectIO(air.m1.crest) 
+```
+
+
+Repetimos el proceso analogamente ya que vuelve a haber Outlayers.
+
+```{r, include=FALSE}
+# Colgate
+air.m2.colgate = arimax(log(oColgate),order = c(0,1,1),
+                seasonal = list(order = c(0,1,1),period = 52),
+                xtransf = data.frame(ADA = 1*(seq(oColgate) == 135),
+                    ADA = 1*(seq(oColgate) == 135)),
+                transfer = list(c(0,0),c(1,0)),
+                xreg = data.frame(Ago21 = 1*(seq(oColgate) == 190)),
+                method = 'ML')
+air.m2.colgate
+```
+
+```{r, include=FALSE}
+# crest
+air.m2.crest = arimax(log(oCrest),order = c(3,1,0),
+                seasonal = list(order = c(1,0,0),period = 52),
+                xtransf = data.frame(I0108 = 1*(seq(oCrest) == 135),
+                        I0108 = 1*(seq(oCrest) == 135)),
+                transfer = list(c(0,0),c(1,0)), 
+                xreg = data.frame(ago22 = 1*(seq(oCrest) == 99),
+                ago21 = 1*(seq(oCrest) == 190)),
+                method ='ML')
+air.m2.crest
+```
+
+
+
+Recalculamos los valores perdidos
+
+```{r}
+# distorsionan la serie
+detectAO(air.m2.colgate) 
+detectAO(air.m2.crest) 
+```
+
+
+```{r}
+# distorsionan el error
+detectIO(air.m2.colgate) 
+detectIO(air.m2.crest) 
+```
+
+De nuevo trazamos un tercer modelo para eliminar el outlayer que seguimos visualizando.
+
+
+```{r, include=FALSE}
+
+air.m3.colgate = arimax(log(oColgate),order = c(0,1,1),
+                seasonal = list(order = c(0,1,1),period = 52),
+                xtransf = data.frame(ADA = 1*(seq(oColgate) == 135),
+                    ADA = 1*(seq(oColgate) == 135)),
+                transfer = list(c(0,0),c(1,0)),
+                xreg = data.frame(Dic59 = 1*(seq(oColgate) == 102)),
+                method = 'ML') 
+air.m3.colgate
+```
+
+```{r}
+# ahora los de colgate
+
+detectAO(air.m3.colgate) 
+detectIO(air.m3.colgate)
+
+```
+
+Uno de los objetivos es como vimos antes, ver la serie si no hubiera ocurrido las alteraciones que provocan los valores perdidos.   
+
+```{r}
+# gráficamos Colgate 
+
+plot(log(oColgate),ylab = 'Log(oColgate)')
+points(fitted(air.m3.colgate))
+
+```
+
+
+```{r}
+plot(log(oColgate),ylab='Log(oColgate)')
+points(fitted(air.m2.crest))
+```
+
+
+```{r, include=FALSE} 
+# ADA 1 de agosto
+
+
+# colgate
+air.m3.colgate$coef 
+
+agosto01 = 1*(seq(oColgate) == 135)
+plot(ts(agosto01*(0.0263) +
+filter(agosto01,filter = -0.7685,method ='recursive',side = 1)*(0.1312), 
+frequency = 52,start = 1958),type ='h',ylab ='Intervención ADA') 
+abline(h = 0)
+
+# crest
+air.m2.crest$coef
+
+agosto01 = 1*(seq(oCrest) == 135)
+plot(ts(agosto01*(0.6627) +
+filter(agosto01,filter = -0.4709, method ='recursive',side = 1)*(-0.6575),
+frequency = 52,start = 1958),type ='h',ylab ='Intervencion ADA')
+abline(h = 0)
+```
+
+
+Función de Transferencia  
+
+```{r, include=FALSE}
+#esto da mucha guerra mirar cuaderno y comparar 
+mod_transferencia <- arimax( zcolgate,
+                        order = c(0,1,1), 
+                        include.mean = TRUE,
+                        xtransf = zcrest, 
+                        transfer = list(c(0,0)), 
+                        method = "ML")
+mod_transferencia
+
+```
+
+```{r}
+tsdisplay(mod_transferencia$residuals)
+```
+
+La funcion de transferencia En los modelos de función de transferencia, el objetivo es relacionar dos ó más series temporales elaborando modelos causales de predicción. Se considera la forma de relacionar una serie temporal, denominada output en función de una u otras series temporales, que se denominan inputs.
+
+
+#### prediccion 1963
+
+```{r}
+# con  arima:
+Colgate1963 <- forecast(fColgate.arima, h = 16) 
+Crest1963 <- forecast(fCrest.arima, h = 16) 
+```
+
+
+```{r}
+# Gráfica
+autoplot(Colgate1963)
+autoplot(Crest1963)
+```
+
+#### Conclusiones
+
+Hay comportamientos que se desarrollan en las series que son complejos de comprender y outlyers. Hay marcas como crest que aprovechan este tipo de situaciones para consolidarse y acabar como referente. Colgate creo que debería en ese hipotetico momento del tiempo no invertir en publicidad sino reformarlas características internas de su producto para que consiguiera un reconocimiento de un ente de peso como ADA y eso estabilizaría de nuevo la tendencia hacia posiciones de autocovarianza nula en la serie. 
+
+
+
+
