@@ -1,0 +1,298 @@
+---
+title: "Práctica 6 Prediccion"
+author: "Garcia Giron A"
+date: "30/11/2020"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, 
+                      message = FALSE, 
+                      fig.height = 4, 
+                      fig.width = 8, 
+                      fig.align = "center")
+```
+
+Existe relación? y si existe, intentaremos determinarla  entre las series temporales de estas dos grandes de la industria automovilistica europea.
+partimos con de datos desde 2014.
+
+
+```{r include=FALSE}
+# LIBRERIAS
+library("quantmod")
+library (forecast)
+library("fGarch")
+library(quantmod)
+library(vars)
+```
+
+
+```{r include=FALSE}
+
+#funciones
+archTest <- function(rtn,m=10){
+  # Perform Lagrange Multiplier Test for ARCH effect of a time series
+  # rtn: time series
+  # m: selected AR order
+  # TSAY(2013)
+  
+  y=(rtn-mean(rtn))^2
+  T=length(rtn)
+  atsq=y[(m+1):T]
+  x=matrix(0,(T-m),m)
+  for (i in 1:m){
+    x[,i]=y[(m+1-i):(T-i)]
+  }
+  md=lm(atsq~x)
+  summary(md)
+}
+
+```
+
+### GARCH 
+
+"El modelo GARCH es un modelo autorregresivo generalizado que captura las agrupaciones de volatilidad de las rentabilidades a través de la varianza condicional. 
+
+En otras palabras, el modelo GARCH encuentra la volatilidad promedio a medio plazo mediante una autorregresión que depende de la suma de perturbaciones rezagadas y de la suma de varianzas rezagadas."
+
+```{r include=FALSE}
+# YAHOO importamos los datos
+sSymbol="BMW.DE"
+
+mData<-getSymbols(sSymbol, from="2014-01-01",to="2020-10-30",auto.assign=FALSE)
+
+xData=Ad(mData) 
+```
+
+Eliminamos nas y calculamos la rentabilidad de los valores
+
+
+```{r include=FALSE}
+
+#trazamos las rentabilidades con logs
+dRentCont = dailyReturn(xData,type = 'log',leading = FALSE)
+# fuera los valores nulos 
+dRentCont = na.exclude(dRentCont)
+
+```
+
+
+```{r include=FALSE}
+# trazamos las series 
+plot.zoo(cbind(xData,dRentCont),
+         main = paste(sSymbol," y  Rentabilidad"),
+         xlab ="años",
+         ylab = c("Precio","rentabilidad"))
+grid(lwd = 2)
+```
+
+
+Pocedemos a representar la volatilidad del modelos garch:
+
+
+ 
+```{r echo=FALSE}
+# VOLATILIDAD GARCH
+# dibujamos la rentablidad junto a la volatilidad y el precio
+plot.zoo(cbind(Ad(mData),dRentCont,dRentCont^2),
+         main = paste(sSymbol," y  Rentabilidad"),
+         xlab = "años",
+         ylab = c("Precio","rentabilidad","Volatilidad"))
+```
+
+```{r include=FALSE}
+# test de la media 
+
+# contrastamos H
+t.test(dRentCont)
+```
+autocorrelaciones y la correlaciones parciales:
+
+
+```{r echo=FALSE}
+# CORRELACION Y CORRELACION PARCIAL (ACF & PACF)
+
+VolProxy=dRentCont^2
+tsdisplay (VolProxy)
+```
+
+#duda siempre es ruido blanco ??
+observamos como no es ruido blanco, por lo que deducimos que es un modelo gach
+
+```{r include=FALSE}
+# Test Ljung-Box  
+
+Box.test(VolProxy,lag=10,  type="Lj")
+Box.test(VolProxy,lag=20,  type="Lj")
+Box.test(VolProxy,lag=40,  type="Lj")
+```
+
+
+análisis de la volatilidad. -> modelo arch
+
+
+```{r echo=FALSE}
+# LM test
+archTest(dRentCont,20)
+```
+
+
+```{r include=FALSE}
+# GARCH(1,1)
+m2 = garchFit(~1+garch(1,1),data=dRentCont,trace=F) # Fit an GARCH(1,1) model
+summary(m2)
+
+```
+
+```{r include=FALSE}
+resi=residuals(m2,standardize=T) #residuos
+resi=xts(resi,order.by=index(dRentCont)) #residuos as xts
+tsdisplay(resi^2) #acf pacf residuos
+```
+
+```{r include=FALSE}
+#t-student
+m3=garchFit(~1+garch(1,1),data=dRentCont,trace=F,cond.dist="std")
+summary(m3)
+#plot(m3)
+```
+
+Evolucion de bmw en bolsa
+
+
+```{r echo=FALSE}
+v1=volatility(m3)# VOLATILIDAD
+v1=xts(v1,order.by=index(dRentCont)) #  volatility as XTS (volatilidad a serie temporal)
+plot(sqrt(252)*v1)
+```
+
+```{r include=FALSE  }
+resi=residuals(m3,standardize=T) # estandarizacion de los residuos
+resi=xts(resi,order.by=index(dRentCont)) # Standardized residuals as XTS (a serie temporal)
+tsdisplay(resi^2) #acf pacf residuals
+plot(resi)
+```
+
+Por último, realizamos la predicción de la volatilidad de la serie:
+
+```{r echo=FALSE}
+predict(m3) # prediccion de la volatilidad (forecast)
+predict(m3, n.ahead = 10, plot=TRUE, crit_val=2) #plot with 2*standard error
+predict(m3,n.ahead=20,plot=TRUE,conf=.9,nx=100) # plot 100 data with 90% confidence
+```
+
+
+ La prediccion  se ajusta al los rangos de confianza del intervalo. a priori podría ser buena predicción
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+### VAR (BMW Y VW)
+
+Podemos destacar que un modelo VAR es fácil de estimar, sus variables pueden  no ser estacionarias y los errores pueden ser corregidos en el momento.
+
+"Utilizamos un modelo del tipo vector autoregresivo (VAR) cuando queremos
+caracterizar las interacciones simult·neas entre un grupo de variable. Un VAR
+es un modelo de ecuaciones simult·neas formado por un sistema de ecuaciones
+de forma reducida sin restringir. Que sean ecuaciones de forma reducida quiere
+decir que los valores contempor·neos de las variables del modelo no aparecen
+como variables explicativas en ninguna de las ecuaciones. Por el contrario,
+el conjunto de variables explicativas de cada ecuaciÛn est· constituido por un
+bloque de retardos de cada una de las variables del modelo. Que sean ecuaciones
+no restringidas signiÖca que aparece en cada una de ellas el mismo grupo de
+variables explicativas"
+
+
+```{r include=FALSE}
+# librerias
+library(quantmod)
+library(vars)
+```
+
+```{r include=FALSE}
+# lectura de datos 
+bmw =getSymbols("BMW.DE",env=NULL)
+vw=getSymbols("VOW3.DE",env=NULL)
+```
+
+```{r include=FALSE}
+# rentabilidad mensual
+rbmw=monthlyReturn(bmw[,6])
+rvw=monthlyReturn(vw[,6])
+```
+
+```{r include=FALSE}
+#generar vector
+vY=cbind(rbmw,rvw)
+colnames(vY)=c("BMW","VOW3")
+vY=na.omit(vY)
+```
+
+```{r include=FALSE}
+#Seleccionar modelo
+VARselect(vY)
+``` 
+
+```{r include=FALSE}
+#estimamos var 1 
+model.var=VAR(vY)
+summary(model.var) 
+```
+
+```{r include=FALSE}
+model.var1=VAR(vY,type="none") # quito la consatnte y lo vuelvo a estimar
+summary(model.var1)
+```
+
+
+-eliminamos na para tener mayor precision
+-eliminamos corte con el eje o constante ya que el r2 y el valor de los estimadores es bajo
+-calculamos el principio de causalidad de Granger. no rechazamos la hipotesis nula y deducimos que no existe relación instantaena de causalidad entre ambas.
+
+
+
+
+```{r echo=FALSE}
+#causalidad de granger: para ver si hay efecto bidireccional 
+causality(model.var1)
+# se acepta la hipotesis nula y no existe relacion instantanea, es decir, no causan efecto lo que sucedad en un acompañia respecto la otra, porque estamos ante situaciones bidireccionales.
+```
+A continuación,  representamos la respuesta al impulso. 
+la manera en que se genera un efecto contra la otra si una varía
+
+se observa que la linea negra se ecnuentra dentro de las lineas roja, lo que implica un efecto contemporaneo. Es decir, si se produce una alteración en BMW no afecta a Volkswagen.
+
+```{r echo=FALSE}
+#respuesta al impulso: como afecta VW una subida en BMW 
+model.ri=irf(model.var1)
+plot(model.ri)
+```
+
+
+Por último, realizamos la predicción de ambas series con un intervalo de confianza del 95%:
+#duda en como son rdos preguntar ricdo
+```{r echo=FALSE}
+##prediccion
+predict(model.var1, n.ahead = 8, ci = 0.95) # la rentabilidad esperamos que sea 0 
+```
