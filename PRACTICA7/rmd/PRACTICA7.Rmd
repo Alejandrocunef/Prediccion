@@ -1,0 +1,114 @@
+---
+title: "Práctica 7"
+author: "Garcia Giron A"
+date: "13/12/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+Antes de nada.
+
+la duda que se planteó en clase por el profesor sobre el pico en la cotización de volkswagen en 2008 se debe a que en esa fecha (octubre de 2008), la acción subió un 146%, se debió a que Porsche, primera accionista del grupo, anunció que aumentaba su participación en esta.
+
+
+En este trabajo tenemos que entrar a valorar como afecto en las series temporales del valor de las acciones de las automovilísticas alemanas  el boom del diesel de 2015 cuando volkswagen trucó los catalizadores que detectavan un volumen sustancialmente inferior de las emisiones de sus vehiculos para poder pasar las normativas de emisiones de Co2.
+
+Vamos a ver el efecto de las consecuencias de esta maniobra de wv.
+
+```{r}
+#Carga de librerias
+library(dplyr)
+library(readr)
+library(xts)
+library(ggplot2)
+library(tidyr)
+library(tseries)
+library(CausalImpact)
+```
+
+
+```{r}
+
+inicio = "2014-01-01"  #iniciamos la serie
+enclave = "2015-09-01"   #fecha de noticia
+final = "2020-11-01"   #final del análisis
+antes_de = as.Date(c(inicio, enclave))   # a priori
+despues_de = as.Date(c(enclave, final))    # a posteriori                                        
+```
+
+```{r} 
+
+#carga de datos de la compañias
+Volkswagen = get.hist.quote(instrument = 'VOW.DE',
+                            start = inicio,
+                            end = final,
+                            quote = 'Adj',
+                            compression = 'w')
+BMW = get.hist.quote(instrument = 'BMW.DE',
+                            start = inicio,
+                            end = final,
+                            quote = 'Adj',
+                            compression = 'w')
+BMW=na.omit(BMW) #eliminamos na
+Volkswagen=na.omit(Volkswagen) #idem
+```
+
+```{r}
+#juntamos los valores
+stocks <- cbind(Volkswagen, BMW)
+stocks_alreves <- cbind(BMW, Volkswagen)
+```
+
+##C.I. VOLK
+
+```{r}
+# ahora utilizamos #CausalImpact visualizemos: #como cambio estructural en econometria mira apuntes
+impact <- CausalImpact(data = stocks,
+                       pre.period = antes_de,
+                       post.period = despues_de)
+#cvamos laos rdos
+summary(impact)
+plot(impact)
+plot(impact, "original")
+```
+Ahí se ve de manera claro como afectó la multa que le impusieron los órganos pertinentes de EEUU a la multinacional Alemana.
+
+```{r}
+summary(impact, "report")
+```
+
+graficamente: Es eveidente
+numericamente: de acuerdo con el reort la acción de vag perdio un 14%  a partir de ese septiembre de 2015
+
+## C.I.BMW
+
+
+```{r}
+impact_BMW <- CausalImpact(data = stocks_alreves,
+                       pre.period = antes_de, #EX ANTE
+                       post.period = despues_de) #ex post
+#comprobamos
+
+summary(impact_BMW)
+plot(impact_BMW)
+plot(impact_BMW, "original")
+```
+
+
+
+graficamente: Es eveidente
+numericamente: de acuerdo con el report la acción de las fábricas Bábaras aumento un 11%  a partir de ese septiembre de 2015
+
+
+```{r}
+summary(impact_BMW, "report")
+```
+
+En conclusión es logico que la compañia bábara subiera un 11 desde el momento del cambio estructural.
+en algunos modelos pueden ser bienes sustitutivos por ende el consumidor y el inversor apoto por una compañía sólida del mismo sector donde, hasta el momento, la honestidad no había sido comprimetida.
+
+
+
+
