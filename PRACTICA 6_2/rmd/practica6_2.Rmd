@@ -1,0 +1,89 @@
+---
+title: "Cointegración"
+author: "Garcia Giron A"
+date: "13/12/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+En esta práctica estamos delante de los valores automovilisticos bmw y volkswagen, queremos analizar si esxiste cointegración entre el fabricante bábaro y la marca de Wolfsburgo.
+
+¿Qué es la cointegración? 
+
+A Groso modo, se dice que dos o más series temporales estan cointegradas cuando la comparación de estas en un período t presentan una tendencia estocastica común.
+Vamos a seguir el método de regresión lineal y los test DF y DF aumentado para determinar si de verdad estas series estabn cointegradas.
+
+Para esto procederemos realizando los diferentes testeos de Dickey Fuller y Dickey Fuller Aumentado. Tambien realizaremos un modelo de regresion lineal entre las dos variables y luego analizaremos sus residuales para verificar si estan o no cointegrados entre si.
+
+```{r}
+library(tseries)
+library(quantmod)
+#igual que en fundamentos revisar ese codigo
+getSymbols('BMW.DE', from='2014-01-01', to='2020-11-30')
+getSymbols('VOW.DE', from='2014-01-01', to='2020-11-30')
+```
+
+
+
+```{r}
+BMW.DE.ret <- diff(log(Ad(BMW.DE)))  #las hacemos estacionarias
+VOW.DE.ret <- diff(log(Ad(VOW.DE)))
+```
+
+```{r}
+#trozeamos a mensual
+BMW.DE.ret <- to.monthly(BMW.DE.ret)$BMW.DE.ret.Close 
+VOW.DE.ret <- to.monthly(VOW.DE.ret)$VOW.DE.ret.Close
+```
+
+```{r}
+
+vY=cbind(BMW.DE.ret,VOW.DE.ret) #aqui se incluyen los dos movimientos, generacion del vector
+colnames(vY)=c("BMW","VOW") #le ponemos nombres
+vY=na.omit(vY) 
+
+```
+
+```{r}
+plot(vY)
+adf.test(vY$BMW)  #con un p valor 0.01 rechazamos la hipotesis nula y afirmamos taxativamente que es estacionaria
+
+adf.test(vY$VOW) #con un p valor 0.01903 rechazamos la hipotesis nula y afirmamos taxativamente que es estacionaria
+```
+
+
+```{r}
+library(car)
+m01  <- lm(vY$BMW ~ vY$VOW)
+```
+
+```{r}
+summary(m01)
+residuals <- m01$residuals
+summary(residuals)
+residualPlot(m01)
+
+```
+Atendiendo al criterio de los residuos  vemos que los errores se estabilizan en torno a la zona de la media por lo que nos ayuda a deducir la cointegracion de estos valores.
+
+
+```{r}
+adf.test(residuals) 
+library(urca) 
+test <- ur.df(residuals,type = "tren", selectlags = "AIC", lags  = 10)  
+
+# p valor 0.01
+summary(test)
+```
+
+En esta prueba determinamos lo que gráficamente intuíamos anteriormente.
+
+con un p valor de 0.01 afirmamos que los residuos son estacionarios ademas el tes DF nos arroja un valor de -4,6 superior a -3,15 por tanto estamos en zona de rechazo.
+
+Determinamos que los errores no son estacionarios por ende existe cointegracion entre las dos series  del sector automotriz aleman.
+
+
+
